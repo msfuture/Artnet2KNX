@@ -1,0 +1,54 @@
+# Artnet2KNX – Grundkonfiguration
+
+knx:
+  # routing        = KNX IP Routing über Multicast ("Broadcast" an alle IP-Router)
+  # tunneling      = UDP-Tunnel zu einer KNX IP Schnittstelle (gateway_ip nötig)
+  # tunneling_tcp  = TCP-Tunnel (gateway_ip nötig)
+  # automatic      = Gateway im Netz suchen
+  connection_type: routing
+
+  # KNX IP Routing Multicast-Adresse und Port (Standard 224.0.23.12:3671)
+  multicast_group: 224.0.23.12
+  multicast_port: 3671
+
+  # Physikalische Adresse des Gateways auf dem Bus (bei Routing frei wählbar,
+  # muss im Projekt eindeutig sein und zur Linie des IP-Routers passen)
+  individual_address: 15.15.250
+
+  # Lokale IP / Netzwerkkarte, über die KNX gesendet wird (null = automatisch)
+  local_ip: null
+
+  # Nur für Tunneling
+  gateway_ip: null
+  gateway_port: 3671
+  route_back: false
+
+  # Max. Telegramme pro Sekunde auf den Bus (0 = unbegrenzt).
+  # TP-Linien schaffen real ca. 20-40 Telegramme/s.
+  rate_limit: 20
+
+artnet:
+  bind_ip: 0.0.0.0
+  port: 6454
+  # Auf ArtPoll antworten, damit Lichtpulte den Gateway als Node finden
+  poll_reply: true
+  # IP, die in ArtPollReply gemeldet wird (null = automatisch ermitteln)
+  announce_ip: null
+  short_name: Artnet2KNX
+  long_name: Art-Net to KNX Gateway
+
+# Standardwerte für das Mapping (können pro Kanal überschrieben werden)
+defaults:
+  # DMX-Wert ab dem "Schalten" EIN sendet (1..255)
+  switch_threshold: 128
+  # Minimaler Abstand zwischen zwei Telegrammen auf derselben Gruppenadresse
+  # in Sekunden. Art-Net kommt mit bis zu 44 Hz – beim Dimmen würde das den
+  # Bus fluten. Der letzte Wert wird immer nachgesendet.
+  switch_min_interval: 0.0
+  dim_min_interval: 0.2
+
+logging:
+  level: INFO   # DEBUG, INFO, WARNING, ERROR
+
+# Mapping-Datei (relativ zu dieser Datei)
+mapping_file: mapping.yaml

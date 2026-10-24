@@ -1,0 +1,43 @@
+# Artnet2KNX – Mapping DMX-Kanal -> KNX-Gruppenadresse
+#
+# universe:  Art-Net Port-Address als Zahl (0..32767) oder "Net:SubNet:Universe"
+#            z.B. 0, 1, oder "0:0:1"
+# channels:
+#   channel:        DMX-Kanal 1..512
+#   type:           switch  -> DPT 1.001 (EIN wenn DMX-Wert >= threshold)
+#                   dim     -> DPT 5.001 Byte-Wert (DMX 0..255 = KNX 0..255 = 0..100 %)
+#   group_address:  KNX Gruppenadresse, z.B. 1/2/3
+#   name:           optional, nur für Logs
+#   threshold:      optional, nur switch (Standard aus config.yaml)
+#   invert:         optional, DMX-Wert umkehren (255 - Wert)
+#   min_interval:   optional, Drosselung in Sekunden (Standard aus config.yaml)
+#
+# Ein DMX-Kanal darf mehrfach vorkommen, z.B. um einen Dimmer zusätzlich über
+# seine Schalt-Gruppenadresse anzusteuern.
+
+universes:
+  - universe: 0
+    channels:
+      - channel: 1
+        type: switch
+        group_address: 1/0/1
+        name: Wohnzimmer Decke
+
+      - channel: 2
+        type: dim
+        group_address: 1/1/2
+        name: Esstisch Helligkeit
+
+      - channel: 2
+        type: switch
+        group_address: 1/0/2
+        name: Esstisch Schalten
+        threshold: 1
+
+  - universe: "0:0:1"
+    channels:
+      - channel: 10
+        type: dim
+        group_address: 2/1/10
+        name: Bühne Spot links
+        min_interval: 0.1
