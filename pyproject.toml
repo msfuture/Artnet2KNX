@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "artnet2knx"
+version = "0.1.0"
+description = "Art-Net zu KNX Gateway"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.10"
+dependencies = [
+    "xknx>=3.0",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=7", "pytest-asyncio>=0.23"]
+
+[project.scripts]
+artnet2knx = "artnet2knx.__main__:main"
+
+[tool.setuptools]
+packages = ["artnet2knx"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

@@ -1,0 +1,15 @@
+[Unit]
+Description=Art-Net zu KNX Gateway
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=artnet2knx
+WorkingDirectory=/opt/artnet2knx
+ExecStart=/opt/artnet2knx/venv/bin/artnet2knx -c /etc/artnet2knx/config.yaml
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
