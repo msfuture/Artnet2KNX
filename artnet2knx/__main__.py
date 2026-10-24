@@ -13,6 +13,8 @@ from .artnet import ArtNetProtocol, format_universe, start_artnet_listener
 from .config import Config, ConfigError, load_config
 from .gateway import Gateway
 from .knx import KnxSender, LogSender, create_xknx
+from .status import StatusTracker
+from .web import create_app, start_web
 
 logger = logging.getLogger("artnet2knx")
 
@@ -52,7 +54,8 @@ async def run(cfg: Config, dry_run: bool) -> None:
         await xknx.start()
         sender = KnxSender(xknx)
 
-    gateway = Gateway(cfg.mappings, sender, loop)
+    tracker = StatusTracker({m.universe for m in cfg.mappings})
+    gateway = Gateway(cfg.mappings, sender, loop, on_sent=tracker.record_telegram)
     protocol = ArtNetProtocol(
         gateway.handle_dmx,
         gateway.universes,
@@ -60,8 +63,15 @@ async def run(cfg: Config, dry_run: bool) -> None:
         announce_ip=cfg.artnet.announce_ip,
         short_name=cfg.artnet.short_name,
         long_name=cfg.artnet.long_name,
+        on_packet=tracker.record_dmx,
     )
     transport = await start_artnet_listener(protocol, cfg.artnet.bind_ip, cfg.artnet.port)
+
+    web_runner = None
+    if cfg.web.enabled:
+        web_runner = await start_web(
+            create_app(cfg, gateway, tracker, xknx), cfg.web.bind_ip, cfg.web.port
+        )
     logger.info(
         "Gateway läuft: %d Mappings in %d Universen",
         len(cfg.mappings),
@@ -71,6 +81,8 @@ async def run(cfg: Config, dry_run: bool) -> None:
         await stop.wait()
     finally:
         logger.info("Beende Gateway")
+        if web_runner is not None:
+            await web_runner.cleanup()
         transport.close()
         gateway.close()
         if xknx is not None:

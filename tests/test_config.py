@@ -52,6 +52,8 @@ def test_defaults_applied(tmp_path):
         ("", "universes: [{universe: 0, channels: [{channel: 1, type: dim, group_address: 99/9/9}]}]", "Gruppenadresse"),
         ("", "universes: [{universe: 0, channels: [{channel: 1, type: dim}]}]", "group_address"),
         ("", "universes: [{universe: 99999, channels: []}]", "Universum"),
+        ("web: {port: 0}\n", MAPPING, "web.port"),
+        ("web: {username: admin}\n", MAPPING, "gemeinsam"),
     ],
 )
 def test_invalid(tmp_path, config, mapping, message):

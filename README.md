@@ -16,6 +16,7 @@ Unterstützt:
 - Zusätzlich gibt es ein globales Limit für Telegramme pro Sekunde (`knx.rate_limit`).
 - Antwortet auf **ArtPoll**, damit Lichtpulte den Gateway als Node finden.
 - Ein DMX-Kanal kann auf mehrere Gruppenadressen gehen (z. B. Dimmwert + Schalten).
+- **Statusseite im Browser** mit Live-Werten (siehe unten).
 
 ## Installation
 
@@ -46,6 +47,13 @@ artnet:
   bind_ip: 0.0.0.0
   port: 6454
   poll_reply: true
+
+web:
+  enabled: true
+  bind_ip: 127.0.0.1              # nur lokal; 0.0.0.0 = aus dem Netz erreichbar
+  port: 8080
+  username: null                  # Basic-Auth, optional
+  password: null
 
 defaults:
   switch_threshold: 128
@@ -109,6 +117,27 @@ journalctl -u artnet2knx -f
 
 Firewall: UDP 6454 (Art-Net) eingehend und UDP 3671 / Multicast `224.0.23.12` (KNX) freigeben.
 
+## Statusseite
+
+Unter `http://<bind_ip>:<port>/` (Standard `http://127.0.0.1:8080/`) zeigt der
+Gateway eine Statusseite, die sich jede Sekunde aktualisiert:
+
+- **KNX:** Verbindungsstatus, Routing/Tunneling, Ziel, physikalische Adresse, Fehler, Warteschlange
+- **Art-Net Universen:** Empfang ja/nein, Pakete/s, Absender-IP. Auch Universen
+  **ohne Mapping** werden angezeigt, so sieht man sofort, ob das Pult z. B.
+  Universum 1 statt 0 sendet.
+- **Kanäle:** aktueller DMX-Wert, zuletzt gesendeter KNX-Wert, Anzahl Telegramme,
+  Hinweis „wartet“, solange ein gedrosselter Wert noch nicht gesendet ist. Mit Filter.
+- **Letzte Telegramme:** die letzten 100 gesendeten Telegramme mit Zeitstempel
+
+Die Rohdaten gibt es als JSON unter `/api/status`.
+
+Die Seite ist bewusst nur lesend, über sie lässt sich nichts schalten. Trotzdem
+gilt: Soll sie aus dem Netz erreichbar sein (`bind_ip: 0.0.0.0`), unbedingt
+`username` und `password` setzen. Basic-Auth überträgt das Passwort
+unverschlüsselt, für Zugriff über fremde Netze also einen Reverse-Proxy mit
+HTTPS (z. B. nginx, Caddy) davorschalten. Mit `enabled: false` ist die Seite aus.
+
 ## Tests
 
 ```bash
@@ -124,5 +153,8 @@ artnet2knx/
   config.py    Laden und Prüfen der YAML-Dateien
   gateway.py   DMX -> KNX Umrechnung, Änderungserkennung, Drosselung
   knx.py       KNX-Verbindung und Telegramme (xknx)
+  status.py    Laufzeit-Statistiken (Pakete/s, Telegramm-Log)
+  web.py       Statusseite und JSON-API (aiohttp)
+  static/      HTML der Statusseite
   __main__.py  Kommandozeile / Dienst
 ```
