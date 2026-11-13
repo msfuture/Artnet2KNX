@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from collections.abc import Callable, Iterable
 
 from .artnet import DmxPacket
@@ -13,6 +14,8 @@ logger = logging.getLogger(__name__)
 
 # Sender bekommt Gruppenadresse und Wert (bool für switch, int 0-255 für dim)
 Sender = Callable[[str, "bool | int"], None]
+# Wird nach jedem gesendeten Telegramm aufgerufen (z.B. für die Statusseite)
+SentCallback = Callable[[ChannelMapping, "bool | int"], None]
 
 
 def dmx_to_knx(mapping: ChannelMapping, dmx_value: int) -> bool | int:
@@ -32,16 +35,36 @@ class ChannelOutput:
     des Intervalls gesendet. So bleibt der Endwert eines Fades immer korrekt.
     """
 
-    def __init__(self, mapping: ChannelMapping, sender: Sender, loop: asyncio.AbstractEventLoop):
+    def __init__(
+        self,
+        mapping: ChannelMapping,
+        sender: Sender,
+        loop: asyncio.AbstractEventLoop,
+        on_sent: SentCallback | None = None,
+    ):
         self.mapping = mapping
         self._sender = sender
         self._loop = loop
+        self._on_sent = on_sent
+        self.dmx_value: int | None = None
+        self.last_sent_at: float | None = None  # time.time() für die Anzeige
+        self.sent_count = 0
         self._last_sent: bool | int | None = None
         self._last_sent_time = float("-inf")
         self._pending: bool | int | None = None
         self._timer: asyncio.TimerHandle | None = None
 
+    @property
+    def last_sent(self) -> bool | int | None:
+        return self._last_sent
+
+    @property
+    def pending(self) -> bool:
+        """True, solange ein gedrosselter Wert auf das Senden wartet."""
+        return self._timer is not None
+
     def update(self, dmx_value: int) -> None:
+        self.dmx_value = dmx_value
         value = dmx_to_knx(self.mapping, dmx_value)
         if self._timer is not None:
             self._pending = value
@@ -64,11 +87,16 @@ class ChannelOutput:
     def _send(self, value: bool | int) -> None:
         self._last_sent = value
         self._last_sent_time = self._loop.time()
+        self.last_sent_at = time.time()
+        self.sent_count += 1
         logger.debug("%s = %s", self.mapping.label, value)
         try:
             self._sender(self.mapping.group_address, value)
         except Exception:  # noqa: BLE001 - ein fehlerhaftes Telegramm darf den Gateway nicht stoppen
             logger.exception("Senden fehlgeschlagen: %s", self.mapping.label)
+            return
+        if self._on_sent is not None:
+            self._on_sent(self.mapping, value)
 
     def cancel(self) -> None:
         if self._timer is not None:
@@ -84,13 +112,13 @@ class Gateway:
         mappings: Iterable[ChannelMapping],
         sender: Sender,
         loop: asyncio.AbstractEventLoop | None = None,
+        on_sent: SentCallback | None = None,
     ):
         loop = loop or asyncio.get_running_loop()
+        self.outputs = [ChannelOutput(m, sender, loop, on_sent) for m in mappings]
         self._by_universe: dict[int, list[ChannelOutput]] = {}
-        for mapping in mappings:
-            self._by_universe.setdefault(mapping.universe, []).append(
-                ChannelOutput(mapping, sender, loop)
-            )
+        for output in self.outputs:
+            self._by_universe.setdefault(output.mapping.universe, []).append(output)
 
     @property
     def universes(self) -> set[int]:
@@ -104,6 +132,5 @@ class Gateway:
                 output.update(data[index])
 
     def close(self) -> None:
-        for outputs in self._by_universe.values():
-            for output in outputs:
-                output.cancel()
+        for output in self.outputs:
+            output.cancel()

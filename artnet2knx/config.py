@@ -47,6 +47,15 @@ class ArtNetConfig:
 
 
 @dataclass
+class WebConfig:
+    enabled: bool = True
+    bind_ip: str = "127.0.0.1"
+    port: int = 8080
+    username: str | None = None
+    password: str | None = None
+
+
+@dataclass
 class Defaults:
     switch_threshold: int = 128
     switch_min_interval: float = 0.0
@@ -74,6 +83,7 @@ class ChannelMapping:
 class Config:
     knx: KnxConfig = field(default_factory=KnxConfig)
     artnet: ArtNetConfig = field(default_factory=ArtNetConfig)
+    web: WebConfig = field(default_factory=WebConfig)
     defaults: Defaults = field(default_factory=Defaults)
     log_level: str = "INFO"
     mapping_file: Path = Path("mapping.yaml")
@@ -107,13 +117,14 @@ def load_config(path: str | Path) -> Config:
     path = Path(path)
     data = _load_yaml(path)
     cfg = Config()
-    known = {"knx", "artnet", "defaults", "logging", "mapping_file"}
+    known = {"knx", "artnet", "web", "defaults", "logging", "mapping_file"}
     for key in data:
         if key not in known:
             raise ConfigError(f"Unbekannte Option '{key}' in {path}")
 
     _fill(cfg.knx, data.get("knx"), "knx")
     _fill(cfg.artnet, data.get("artnet"), "artnet")
+    _fill(cfg.web, data.get("web"), "web")
     _fill(cfg.defaults, data.get("defaults"), "defaults")
     cfg.log_level = str((data.get("logging") or {}).get("level", cfg.log_level)).upper()
 
@@ -124,6 +135,11 @@ def load_config(path: str | Path) -> Config:
         )
     if cfg.knx.connection_type.startswith("tunneling") and not cfg.knx.gateway_ip:
         raise ConfigError("knx.gateway_ip ist für Tunneling erforderlich")
+
+    if isinstance(cfg.web.port, bool) or not isinstance(cfg.web.port, int) or not 1 <= cfg.web.port <= 65535:
+        raise ConfigError("web.port muss eine Zahl 1..65535 sein")
+    if bool(cfg.web.username) != bool(cfg.web.password):
+        raise ConfigError("web.username und web.password nur gemeinsam angeben")
 
     mapping_file = Path(data.get("mapping_file", cfg.mapping_file))
     if not mapping_file.is_absolute():

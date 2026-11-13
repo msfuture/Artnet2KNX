@@ -37,6 +37,16 @@ artnet:
   short_name: Artnet2KNX
   long_name: Art-Net to KNX Gateway
 
+# Statusseite im Browser (http://<bind_ip>:<port>/)
+web:
+  enabled: true
+  # 127.0.0.1 = nur lokal erreichbar. Für Zugriff aus dem Netz z.B. 0.0.0.0
+  # setzen und unbedingt username/password vergeben.
+  bind_ip: 127.0.0.1
+  port: 8080
+  username: null
+  password: null
+
 # Standardwerte für das Mapping (können pro Kanal überschrieben werden)
 defaults:
   # DMX-Wert ab dem "Schalten" EIN sendet (1..255)

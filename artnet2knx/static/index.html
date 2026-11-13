@@ -1,0 +1,240 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artnet2KNX Status</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --text: #1d2330; --muted: #6b7280;
+    --border: #e3e6eb; --ok: #15803d; --warn: #b45309; --err: #b91c1c;
+    --accent: #2563eb; --bar: #dbe4f5; --row: #fafbfc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --card: #1b1f27; --text: #e6e8ec; --muted: #9aa1ad;
+      --border: #2b313c; --ok: #4ade80; --warn: #fbbf24; --err: #f87171;
+      --accent: #60a5fa; --bar: #263552; --row: #1f242d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { display: flex; align-items: baseline; gap: 12px; padding: 16px 20px 0; flex-wrap: wrap; }
+  header h1 { margin: 0; font-size: 20px; }
+  header .meta { color: var(--muted); }
+  main { padding: 16px 20px 32px; max-width: 1300px; margin: 0 auto; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .card, section { background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+  .card { padding: 12px 14px; }
+  .card .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .card .value { font-size: 20px; font-weight: 600; margin-top: 2px; }
+  .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; overflow-wrap: anywhere; }
+  section { margin-bottom: 16px; overflow: hidden; }
+  section h2 { margin: 0; padding: 10px 14px; font-size: 15px; border-bottom: 1px solid var(--border);
+               display: flex; justify-content: space-between; gap: 8px; }
+  section h2 small { color: var(--muted); font-weight: 400; }
+  .scroll { overflow-x: auto; }
+  .scroll.tall { max-height: 420px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 6px 14px; text-align: left; white-space: nowrap; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; position: sticky; top: 0; background: var(--card); }
+  tbody tr:nth-child(even) { background: var(--row); }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 1px; }
+  .ok { color: var(--ok); } .warn { color: var(--warn); } .err { color: var(--err); } .muted { color: var(--muted); }
+  .bg-ok { background: var(--ok); } .bg-warn { background: var(--warn); } .bg-err { background: var(--err); } .bg-muted { background: var(--muted); }
+  .bar { position: relative; width: 90px; height: 14px; background: var(--bar); border-radius: 3px; display: inline-block; vertical-align: middle; }
+  .bar span { position: absolute; inset: 0 auto 0 0; background: var(--accent); border-radius: 3px; }
+  .tag { display: inline-block; padding: 0 6px; border-radius: 4px; font-size: 12px; border: 1px solid var(--border); }
+  .empty { padding: 14px; color: var(--muted); }
+  #offline { display: none; background: var(--err); color: #fff; padding: 8px 20px; }
+  #offline.show { display: block; }
+  input[type=search] { font: inherit; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px;
+                       background: var(--bg); color: var(--text); min-width: 0; width: 200px; }
+</style>
+</head>
+<body>
+<div id="offline">Keine Verbindung zum Gateway – letzte Daten werden angezeigt.</div>
+<header>
+  <h1>Artnet2KNX</h1>
+  <span class="meta" id="meta"></span>
+</header>
+<main>
+  <div class="cards">
+    <div class="card"><div class="label">KNX</div><div class="value" id="knx-state">–</div><div class="sub" id="knx-sub"></div></div>
+    <div class="card"><div class="label">Art-Net</div><div class="value" id="artnet-state">–</div><div class="sub" id="artnet-sub"></div></div>
+    <div class="card"><div class="label">Telegramme gesendet</div><div class="value" id="tg-count">–</div><div class="sub" id="tg-sub"></div></div>
+    <div class="card"><div class="label">Laufzeit</div><div class="value" id="uptime">–</div><div class="sub" id="version"></div></div>
+  </div>
+
+  <section>
+    <h2>Art-Net Universen <small>inkl. empfangener Universen ohne Mapping</small></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Status</th><th>Universum</th><th>Mapping</th><th class="num">Pakete/s</th><th class="num">Pakete</th><th>Zuletzt</th><th>Quelle</th></tr></thead>
+      <tbody id="universes"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Kanäle <input type="search" id="filter" placeholder="Filter…" title="Nach Name, Gruppenadresse, Kanal oder Typ filtern"></h2>
+    <div class="scroll tall"><table>
+      <thead><tr><th>Universum</th><th class="num">Kanal</th><th>Name</th><th>Typ</th><th>Gruppenadresse</th><th>DMX</th><th>KNX (gesendet)</th><th class="num">Telegramme</th><th>Zuletzt gesendet</th></tr></thead>
+      <tbody id="mappings"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Letzte Telegramme <small id="tg-log-note"></small></h2>
+    <div class="scroll tall"><table>
+      <thead><tr><th>Zeit</th><th>Gruppenadresse</th><th>Name</th><th>Typ</th><th>Wert</th></tr></thead>
+      <tbody id="telegrams"></tbody>
+    </table></div>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+let filterText = "";
+let last = null;
+
+function el(tag, opts = {}, ...children) {
+  const e = document.createElement(tag);
+  if (opts.cls) e.className = opts.cls;
+  if (opts.title) e.title = opts.title;
+  for (const c of children) e.append(c instanceof Node ? c : document.createTextNode(c ?? ""));
+  return e;
+}
+function row(cells) {
+  const tr = document.createElement("tr");
+  for (const c of cells) tr.append(c instanceof Node && c.tagName === "TD" ? c : el("td", {}, c));
+  return tr;
+}
+function dot(cls, text) { return el("span", {}, el("span", { cls: "dot bg-" + cls }), text); }
+function ago(seconds) {
+  if (seconds == null) return "–";
+  if (seconds < 1) return "gerade eben";
+  if (seconds < 60) return `vor ${Math.round(seconds)} s`;
+  if (seconds < 3600) return `vor ${Math.floor(seconds / 60)} min`;
+  return `vor ${Math.floor(seconds / 3600)} h`;
+}
+function duration(s) {
+  s = Math.floor(s);
+  const d = Math.floor(s / 86400), h = Math.floor(s % 86400 / 3600), m = Math.floor(s % 3600 / 60);
+  if (d) return `${d} d ${h} h`;
+  if (h) return `${h} h ${m} min`;
+  return `${m} min ${s % 60} s`;
+}
+function clock(ts) {
+  const d = new Date(ts * 1000);
+  return d.toLocaleTimeString("de-DE") + "." + String(d.getMilliseconds()).padStart(3, "0");
+}
+function replace(tbody, rows, cols, emptyText) {
+  if (!rows.length) {
+    const td = el("td", { cls: "empty" }, emptyText);
+    td.colSpan = cols;
+    rows = [row([td])];
+  }
+  tbody.replaceChildren(...rows);
+}
+
+function render(s) {
+  const now = s.server_time;
+  $("meta").textContent = `Stand ${new Date(now * 1000).toLocaleTimeString("de-DE")}`;
+  $("version").textContent = `Version ${s.version}`;
+  $("uptime").textContent = duration(now - s.started_at);
+
+  // KNX
+  const k = s.knx;
+  const knxCls = { CONNECTED: "ok", CONNECTING: "warn", DISCONNECTED: "err", DRY_RUN: "warn" }[k.state] || "muted";
+  const knxText = { CONNECTED: "Verbunden", CONNECTING: "Verbinde…", DISCONNECTED: "Getrennt", DRY_RUN: "Dry-Run" }[k.state] || k.state;
+  $("knx-state").replaceChildren(dot(knxCls, knxText));
+  let sub = `${k.active_type || k.connection_type} · ${k.target} · PA ${k.individual_address}`;
+  if (k.connected_since) sub += ` · seit ${ago(now - k.connected_since).replace("vor ", "")}`;
+  $("knx-sub").textContent = sub;
+
+  // Art-Net
+  const active = s.universes.filter((u) => u.last_seen_ago != null && u.last_seen_ago < 3);
+  const activeMapped = active.filter((u) => u.mapped).length;
+  const mappedTotal = s.universes.filter((u) => u.mapped).length;
+  const anCls = activeMapped === mappedTotal ? "ok" : activeMapped ? "warn" : "err";
+  $("artnet-state").replaceChildren(dot(anCls, `${activeMapped} / ${mappedTotal} aktiv`));
+  const unmapped = active.length - activeMapped;
+  $("artnet-sub").textContent = `Empfang ${s.artnet.bind}` + (unmapped ? ` · ${unmapped} Universum/en ohne Mapping` : "");
+
+  // Telegramme
+  $("tg-count").textContent = s.telegram_count.toLocaleString("de-DE");
+  const recent = s.telegrams.filter((t) => now - t.time <= 10).length;
+  let tgSub = `${(recent / 10).toFixed(1)} /s (letzte 10 s) · Limit ${k.rate_limit || "∞"} /s`;
+  if (k.queue) tgSub += ` · Warteschlange ${k.queue}`;
+  if (k.errors) tgSub += ` · Fehler ${k.errors}`;
+  $("tg-sub").textContent = tgSub;
+
+  // Universen
+  replace($("universes"), s.universes.map((u) => {
+    const live = u.last_seen_ago != null && u.last_seen_ago < 3;
+    const status = live ? dot(u.mapped ? "ok" : "warn", u.mapped ? "Empfang" : "Kein Mapping")
+                        : dot(u.mapped ? "err" : "muted", u.packets ? "Inaktiv" : "Keine Daten");
+    return row([
+      status,
+      el("span", { cls: "mono" }, u.label),
+      u.mapped ? "ja" : el("span", { cls: "muted" }, "nein"),
+      el("td", { cls: "num" }, u.rate.toFixed(1)),
+      el("td", { cls: "num" }, u.packets.toLocaleString("de-DE")),
+      ago(u.last_seen_ago),
+      el("span", { cls: "mono" }, u.sources.join(", ") || "–"),
+    ]);
+  }), 7, "Keine Universen konfiguriert.");
+
+  // Kanäle
+  const f = filterText.toLowerCase();
+  const maps = s.mappings.filter((m) => !f ||
+    [m.name, m.group_address, String(m.channel), m.universe, m.type].some((v) => v.toLowerCase().includes(f)));
+  replace($("mappings"), maps.map((m) => {
+    const bar = el("span", { cls: "bar", title: m.dmx == null ? "" : `${Math.round(m.dmx * 100 / 255)} %` }, el("span"));
+    if (m.dmx != null) bar.firstChild.style.width = `${m.dmx / 2.55}%`;
+    const knx = el("span", { cls: m.knx === "EIN" ? "ok" : "" }, m.knx);
+    if (m.pending) knx.append(" ", el("span", { cls: "tag warn", title: "Gedrosselt – wird gleich gesendet" }, "wartet"));
+    return row([
+      el("span", { cls: "mono" }, m.universe),
+      el("td", { cls: "num" }, String(m.channel)),
+      m.name || el("span", { cls: "muted" }, "–"),
+      el("span", { cls: "tag" }, m.type === "switch" ? "Schalten" : "Dimmen"),
+      el("span", { cls: "mono" }, m.group_address),
+      el("span", {}, bar, " ", el("span", { cls: "mono" }, m.dmx == null ? "–" : String(m.dmx))),
+      knx,
+      el("td", { cls: "num" }, m.sent_count.toLocaleString("de-DE")),
+      m.last_sent_at ? ago(now - m.last_sent_at) : "–",
+    ]);
+  }), 9, f ? "Kein Kanal passt zum Filter." : "Keine Kanäle konfiguriert.");
+
+  // Telegramm-Log
+  $("tg-log-note").textContent = `neueste zuerst, max. ${s.telegrams.length}`;
+  replace($("telegrams"), s.telegrams.map((t) => row([
+    el("span", { cls: "mono" }, clock(t.time)),
+    el("span", { cls: "mono" }, t.group_address),
+    t.name || el("span", { cls: "muted" }, "–"),
+    el("span", { cls: "tag" }, t.type === "switch" ? "Schalten" : "Dimmen"),
+    el("span", { cls: t.value === "EIN" ? "ok" : "" }, t.value),
+  ])), 5, "Noch keine Telegramme gesendet.");
+}
+
+async function refresh() {
+  try {
+    const res = await fetch("api/status", { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    last = await res.json();
+    $("offline").classList.remove("show");
+    render(last);
+  } catch (e) {
+    $("offline").classList.add("show");
+  } finally {
+    setTimeout(refresh, 1000);
+  }
+}
+$("filter").addEventListener("input", (e) => { filterText = e.target.value; if (last) render(last); });
+refresh();
+</script>
+</body>
+</html>

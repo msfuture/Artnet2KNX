@@ -139,8 +139,10 @@ class ArtNetProtocol(asyncio.DatagramProtocol):
         announce_ip: str | None = None,
         short_name: str = "Artnet2KNX",
         long_name: str = "Art-Net to KNX Gateway",
+        on_packet: Callable[[int, str], None] | None = None,
     ) -> None:
         self._on_dmx = on_dmx
+        self._on_packet = on_packet  # (Universum, Absender-IP) für jedes ArtDmx
         self._universes = set(universes)
         self._poll_reply = poll_reply
         self._announce_ip = announce_ip
@@ -155,6 +157,8 @@ class ArtNetProtocol(asyncio.DatagramProtocol):
     def datagram_received(self, data: bytes, addr: tuple[str, int]) -> None:
         opcode, dmx = parse_packet(data)
         if dmx is not None:
+            if self._on_packet is not None:
+                self._on_packet(dmx.universe, addr[0])
             if dmx.universe in self._universes:
                 self._on_dmx(dmx)
             elif dmx.universe not in self._unknown_universes:

@@ -100,3 +100,15 @@ async def test_sender_error_does_not_break_gateway():
     gw.handle_dmx(dmx({1: 2}))
     assert calls == [1, 2]
     gw.close()
+
+
+async def test_on_sent_and_state():
+    seen = []
+    gw = Gateway([mapping()], lambda ga, v: None, on_sent=lambda m, v: seen.append((m.group_address, v)))
+    out = gw.outputs[0]
+    assert out.dmx_value is None and out.last_sent is None
+    gw.handle_dmx(dmx({1: 42}))
+    assert seen == [("1/1/1", 42)]
+    assert out.dmx_value == 42 and out.last_sent == 42 and out.sent_count == 1
+    assert out.last_sent_at is not None
+    gw.close()
