@@ -60,6 +60,7 @@ class Defaults:
     switch_threshold: int = 128
     switch_min_interval: float = 0.0
     dim_min_interval: float = 0.2
+    send_initial_values: bool = False
 
 
 @dataclass
@@ -72,6 +73,7 @@ class ChannelMapping:
     threshold: int = 128  # nur switch
     invert: bool = False
     min_interval: float = 0.0
+    send_initial: bool = False
 
     @property
     def label(self) -> str:
@@ -126,6 +128,8 @@ def load_config(path: str | Path) -> Config:
     _fill(cfg.artnet, data.get("artnet"), "artnet")
     _fill(cfg.web, data.get("web"), "web")
     _fill(cfg.defaults, data.get("defaults"), "defaults")
+    if not isinstance(cfg.defaults.send_initial_values, bool):
+        raise ConfigError("defaults.send_initial_values muss true oder false sein")
     cfg.log_level = str((data.get("logging") or {}).get("level", cfg.log_level)).upper()
 
     cfg.knx.connection_type = str(cfg.knx.connection_type).lower()
@@ -180,7 +184,10 @@ def _parse_channel(
 ) -> ChannelMapping:
     if not isinstance(ch, dict):
         raise ConfigError(f"{where}: Eintrag muss ein Mapping sein")
-    allowed = {"channel", "type", "group_address", "name", "threshold", "invert", "min_interval"}
+    allowed = {
+        "channel", "type", "group_address", "name", "threshold", "invert", "min_interval",
+        "send_initial",
+    }
     unknown = set(ch) - allowed
     if unknown:
         raise ConfigError(f"{where}: unbekannte Optionen {sorted(unknown)}")
@@ -213,6 +220,10 @@ def _parse_channel(
     if not isinstance(min_interval, (int, float)) or min_interval < 0:
         raise ConfigError(f"{where}: 'min_interval' muss >= 0 sein")
 
+    send_initial = ch.get("send_initial", defaults.send_initial_values)
+    if not isinstance(send_initial, bool):
+        raise ConfigError(f"{where}: 'send_initial' muss true oder false sein")
+
     return ChannelMapping(
         universe=universe,
         channel=channel,
@@ -222,4 +233,5 @@ def _parse_channel(
         threshold=threshold,
         invert=bool(ch.get("invert", False)),
         min_interval=float(min_interval),
+        send_initial=send_initial,
     )

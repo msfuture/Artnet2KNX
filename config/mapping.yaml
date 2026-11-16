@@ -11,6 +11,8 @@
 #   threshold:      optional, nur switch (Standard aus config.yaml)
 #   invert:         optional, DMX-Wert umkehren (255 - Wert)
 #   min_interval:   optional, Drosselung in Sekunden (Standard aus config.yaml)
+#   send_initial:   optional, ersten Wert nach dem Start senden (true/false,
+#                   Standard: send_initial_values aus config.yaml)
 #
 # Ein DMX-Kanal darf mehrfach vorkommen, z.B. um einen Dimmer zusätzlich über
 # seine Schalt-Gruppenadresse anzusteuern.

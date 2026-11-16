@@ -13,9 +13,9 @@ from artnet2knx.web import create_app
 def make(cfg: Config | None = None):
     cfg = cfg or Config()
     mappings = [
-        ChannelMapping(0, 1, MappingType.SWITCH, "1/0/1", name="Decke"),
-        ChannelMapping(0, 2, MappingType.DIM, "1/1/2"),
-        ChannelMapping(1, 5, MappingType.DIM, "2/1/5"),
+        ChannelMapping(0, 1, MappingType.SWITCH, "1/0/1", name="Decke", send_initial=True),
+        ChannelMapping(0, 2, MappingType.DIM, "1/1/2", send_initial=True),
+        ChannelMapping(1, 5, MappingType.DIM, "2/1/5", send_initial=True),
     ]
     tracker = StatusTracker({m.universe for m in mappings})
     gateway = Gateway(mappings, lambda ga, v: None, on_sent=tracker.record_telegram)
