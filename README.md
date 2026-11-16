@@ -27,6 +27,10 @@ python3 -m venv venv
 venv/bin/pip install .
 ```
 
+Der Befehl `artnet2knx` liegt danach im venv unter `venv/bin/artnet2knx`, nicht
+im normalen Suchpfad. Entweder mit Pfad aufrufen (wie unten) oder vorher in der
+Shell `source venv/bin/activate` ausführen.
+
 ## Konfiguration
 
 Es gibt zwei Dateien (Beispiele in `config/`):
@@ -91,17 +95,19 @@ universes:
 ## Starten
 
 ```bash
+cd /opt/artnet2knx
+
 # Konfiguration prüfen und Mapping anzeigen
-artnet2knx -c config/config.yaml --check
+venv/bin/artnet2knx -c config/config.yaml --check
 
 # Testlauf ohne KNX-Verbindung (Telegramme werden nur geloggt)
-artnet2knx -c config/config.yaml --dry-run -v
+venv/bin/artnet2knx -c config/config.yaml --dry-run -v
 
 # Normalbetrieb
-artnet2knx -c config/config.yaml
+venv/bin/artnet2knx -c config/config.yaml
 ```
 
-Alternativ ohne Installation: `python -m artnet2knx -c config/config.yaml`.
+Alternativ: `venv/bin/python -m artnet2knx -c config/config.yaml`.
 
 ### Als systemd-Dienst
 
