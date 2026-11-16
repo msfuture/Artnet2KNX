@@ -56,6 +56,11 @@ defaults:
   # Bus fluten. Der letzte Wert wird immer nachgesendet.
   switch_min_interval: 0.0
   dim_min_interval: 0.2
+  # false = das erste Art-Net Paket nach dem Start wird nur als Ausgangszustand
+  # gemerkt, gesendet wird erst bei einer echten Änderung. Ein Neustart des
+  # Gateways schaltet so kein Licht (z.B. wenn das Pult 0 für nicht gepatchte
+  # Kanäle sendet). true = beim ersten Paket alle Kanäle einmal senden.
+  send_initial_values: false
 
 logging:
   level: INFO   # DEBUG, INFO, WARNING, ERROR

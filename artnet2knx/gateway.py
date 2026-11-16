@@ -33,6 +33,10 @@ class ChannelOutput:
     Die erste Änderung nach einer Pause geht sofort raus, weitere Änderungen
     innerhalb des Intervalls werden zusammengefasst und der letzte Wert am Ende
     des Intervalls gesendet. So bleibt der Endwert eines Fades immer korrekt.
+
+    Ohne `send_initial` wird der erste empfangene Wert nur als Ausgangszustand
+    gemerkt und nicht gesendet. Ein Neustart des Gateways schaltet dann kein
+    Licht, z.B. wenn das Pult für nicht gepatchte Kanäle 0 sendet.
     """
 
     def __init__(
@@ -50,6 +54,8 @@ class ChannelOutput:
         self.last_sent_at: float | None = None  # time.time() für die Anzeige
         self.sent_count = 0
         self._last_sent: bool | int | None = None
+        # Vergleichswert für die Änderungserkennung: zuletzt gesendet oder Ausgangszustand
+        self._reference: bool | int | None = None
         self._last_sent_time = float("-inf")
         self._pending: bool | int | None = None
         self._timer: asyncio.TimerHandle | None = None
@@ -66,10 +72,13 @@ class ChannelOutput:
     def update(self, dmx_value: int) -> None:
         self.dmx_value = dmx_value
         value = dmx_to_knx(self.mapping, dmx_value)
+        if self._reference is None and not self.mapping.send_initial:
+            self._reference = value
+            return
         if self._timer is not None:
             self._pending = value
             return
-        if value == self._last_sent:
+        if value == self._reference:
             return
         wait = self._last_sent_time + self.mapping.min_interval - self._loop.time()
         if wait <= 0:
@@ -81,11 +90,11 @@ class ChannelOutput:
     def _flush(self) -> None:
         self._timer = None
         value, self._pending = self._pending, None
-        if value is not None and value != self._last_sent:
+        if value is not None and value != self._reference:
             self._send(value)
 
     def _send(self, value: bool | int) -> None:
-        self._last_sent = value
+        self._last_sent = self._reference = value
         self._last_sent_time = self._loop.time()
         self.last_sent_at = time.time()
         self.sent_count += 1

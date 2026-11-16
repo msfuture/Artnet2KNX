@@ -12,6 +12,9 @@ Unterstützt:
 
 - KNX über **IP Routing** (Multicast, Standard `224.0.23.12:3671`) oder **Tunneling** (UDP/TCP) – umgesetzt mit [xknx](https://xknx.github.io/)
 - Es werden nur **Änderungen** gesendet.
+- Nach dem Start wird das erste Art-Net-Paket nur als **Ausgangszustand** gemerkt
+  (`send_initial_values: false`). Ein Neustart des Gateways schaltet dadurch kein
+  Licht, auch wenn das Pult für nicht gepatchte Kanäle 0 sendet.
 - **Drosselung** pro Gruppenadresse (`min_interval`): Art-Net kommt mit bis zu 44 Hz, beim Faden würde das den Bus fluten. Die erste Änderung geht sofort raus, danach höchstens ein Telegramm pro Intervall, und der letzte Wert wird immer nachgesendet.
 - Zusätzlich gibt es ein globales Limit für Telegramme pro Sekunde (`knx.rate_limit`).
 - Antwortet auf **ArtPoll**, damit Lichtpulte den Gateway als Node finden.
@@ -63,6 +66,7 @@ defaults:
   switch_threshold: 128
   switch_min_interval: 0.0
   dim_min_interval: 0.2
+  send_initial_values: false      # erstes Paket nach dem Start nicht senden
 
 mapping_file: mapping.yaml        # relativ zur config.yaml
 ```
@@ -85,6 +89,7 @@ universes:
         type: dim
         group_address: 1/1/2
         min_interval: 0.2        # optional
+        send_initial: false      # optional, überschreibt send_initial_values
         invert: false            # optional, 255 - Wert
 ```
 

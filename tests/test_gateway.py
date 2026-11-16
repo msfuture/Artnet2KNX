@@ -9,7 +9,7 @@ from artnet2knx.knx import build_telegram
 
 
 def mapping(**kw) -> ChannelMapping:
-    base = dict(universe=0, channel=1, type=MappingType.DIM, group_address="1/1/1")
+    base = dict(universe=0, channel=1, type=MappingType.DIM, group_address="1/1/1", send_initial=True)
     base.update(kw)
     return ChannelMapping(**base)
 
@@ -111,4 +111,46 @@ async def test_on_sent_and_state():
     assert seen == [("1/1/1", 42)]
     assert out.dmx_value == 42 and out.last_sent == 42 and out.sent_count == 1
     assert out.last_sent_at is not None
+    gw.close()
+
+
+async def test_first_packet_is_baseline_without_send_initial():
+    sent = []
+    gw = Gateway(
+        [
+            mapping(channel=1, type=MappingType.SWITCH, group_address="1/0/1", send_initial=False),
+            mapping(channel=2, group_address="1/1/2", send_initial=False),
+        ],
+        lambda ga, v: sent.append((ga, v)),
+    )
+    gw.handle_dmx(dmx({1: 0, 2: 0}))  # z.B. nicht gepatchte Kanäle -> 0
+    gw.handle_dmx(dmx({1: 0, 2: 0}))
+    assert sent == []
+    assert gw.outputs[1].dmx_value == 0 and gw.outputs[1].last_sent is None
+    gw.handle_dmx(dmx({1: 255, 2: 0}))  # erst eine echte Änderung wird gesendet
+    assert sent == [("1/0/1", True)]
+    gw.handle_dmx(dmx({1: 255, 2: 80}))
+    assert sent == [("1/0/1", True), ("1/1/2", 80)]
+    gw.close()
+
+
+async def test_baseline_with_throttle():
+    sent = []
+    gw = Gateway([mapping(send_initial=False, min_interval=0.05)], lambda ga, v: sent.append(v))
+    gw.handle_dmx(dmx({1: 10}))
+    gw.handle_dmx(dmx({1: 20}))
+    gw.handle_dmx(dmx({1: 30}))
+    assert sent == [20]
+    await asyncio.sleep(0.08)
+    assert sent == [20, 30]
+    gw.close()
+
+
+async def test_short_packet_does_not_set_baseline():
+    sent = []
+    gw = Gateway([mapping(channel=5, send_initial=False)], lambda ga, v: sent.append(v))
+    gw.handle_dmx(DmxPacket(universe=0, sequence=0, data=bytes(2)))  # Kanal 5 nicht enthalten
+    gw.handle_dmx(dmx({5: 100}))  # erster echter Wert -> Ausgangszustand
+    gw.handle_dmx(dmx({5: 100}))
+    assert sent == []
     gw.close()
