@@ -71,6 +71,17 @@ def build_status(
             }
         )
 
+    controllers = [
+        {
+            "ip": c.ip,
+            "polls": c.polls,
+            "last_seen_ago": round(now_mono - c.last_seen, 1),
+            "replied": c.replied,
+            "note": c.note,
+        }
+        for c in sorted(tracker.controllers.values(), key=lambda c: c.ip)
+    ]
+
     mappings = []
     indexed = sorted(
         enumerate(gateway.outputs), key=lambda io: (io[1].mapping.universe, io[1].mapping.channel)
@@ -111,7 +122,12 @@ def build_status(
         "started_at": tracker.started_at,
         "telegram_count": tracker.telegram_count,
         "knx": knx_status(cfg, xknx),
-        "artnet": {"bind": f"{cfg.artnet.bind_ip}:{cfg.artnet.port}"},
+        "artnet": {
+            "bind": f"{cfg.artnet.bind_ip}:{cfg.artnet.port}",
+            "bind_all": cfg.artnet.bind_ip in ("0.0.0.0", ""),
+            "poll_reply": cfg.artnet.poll_reply,
+        },
+        "controllers": controllers,
         "web": {"allow_send": cfg.web.allow_send},
         "universes": universes,
         "mappings": mappings,

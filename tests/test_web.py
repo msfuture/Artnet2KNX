@@ -47,6 +47,8 @@ async def test_status_api():
     tracker.record_dmx(0, "10.0.0.9")
     gateway.handle_dmx(DmxPacket(0, 0, bytes(data)))
     tracker.record_dmx(7, "10.0.0.9")  # Universum ohne Mapping
+    tracker.record_poll("10.0.0.9", True)
+    tracker.record_poll("10.0.0.9", False, "Targeted Mode 0-20: kein eigenes Universum im Bereich")
 
     async with TestClient(TestServer(create_app(cfg, gateway, tracker))) as client:
         resp = await client.get("/api/status")
@@ -54,6 +56,10 @@ async def test_status_api():
         s = await resp.json()
 
         assert s["knx"]["state"] == "DRY_RUN"
+        assert s["artnet"]["bind_all"] is True
+        (c,) = s["controllers"]
+        assert c["ip"] == "10.0.0.9" and c["polls"] == 2 and c["replied"] is False
+        assert c["note"].startswith("Targeted Mode")
         assert s["telegram_count"] == 2
         assert [u["universe"] for u in s["universes"]] == [0, 1, 7]
         u0, u1, u7 = s["universes"]

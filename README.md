@@ -51,7 +51,7 @@ knx:
   rate_limit: 20                  # Telegramme/s
 
 artnet:
-  bind_ip: 0.0.0.0
+  bind_ip: 0.0.0.0                 # 0.0.0.0 lassen, sonst kommen keine Broadcasts/ArtPolls an
   port: 6454
   poll_reply: true
 
@@ -135,6 +135,9 @@ Unter `http://<bind_ip>:<port>/` (Standard `http://127.0.0.1:8080/`) zeigt der
 Gateway eine Statusseite, die sich jede Sekunde aktualisiert:
 
 - **KNX:** Verbindungsstatus, Routing/Tunneling, Ziel, physikalische Adresse, Fehler, Warteschlange
+- **Pulte (ArtPoll):** welche Pulte das Gateway suchen, wann zuletzt und ob
+  geantwortet wurde. Steht dort nichts, kommen die ArtPolls nicht an (siehe
+  „Pult findet das Gateway nicht“).
 - **Art-Net Universen:** Empfang ja/nein, Pakete/s, Absender-IP. Auch Universen
   **ohne Mapping** werden angezeigt, so sieht man sofort, ob das Pult z. B.
   Universum 1 statt 0 sendet.
@@ -157,6 +160,23 @@ setzen (sonst warnt das Gateway beim Start im Log). Mit `allow_send: false`
 ist die Seite wieder nur lesend. Basic-Auth überträgt das Passwort
 unverschlüsselt, für Zugriff über fremde Netze also einen Reverse-Proxy mit
 HTTPS (z. B. nginx, Caddy) davorschalten. Mit `enabled: false` ist die Seite aus.
+
+## Pult findet das Gateway nicht
+
+Das Gateway antwortet auf ArtPoll nach Art-Net 4: per Unicast an das Pult,
+nach einer zufälligen Wartezeit bis 1 s, im Targeted Mode nur wenn ein eigenes
+Universum im abgefragten Bereich liegt. Bleibt die Tabelle „Pulte (ArtPoll)“
+leer, kommen die Pakete nicht beim Gateway an:
+
+1. `artnet.bind_ip` muss `0.0.0.0` sein. Mit einer konkreten IP stellt Linux
+   keine Broadcasts zu (die Statusseite zeigt dann einen Hinweis).
+2. Der Server braucht eine IP im selben Netz wie das Pult, mit passender
+   Netzmaske. Sendet das Pult z. B. an `2.255.255.255`, braucht der Server eine
+   `2.x.x.x/8`-Adresse.
+3. Die Firewall muss UDP 6454 eingehend erlauben (`sudo ufw allow 6454/udp`).
+
+Prüfen lässt sich das mit `sudo tcpdump -ni any udp port 6454`: Zeigt tcpdump
+ArtPolls, die Statusseite aber nicht, verwirft sie der Server selbst (Punkt 1–3).
 
 ## Tests
 

@@ -64,6 +64,7 @@ async def run(cfg: Config, dry_run: bool) -> None:
         short_name=cfg.artnet.short_name,
         long_name=cfg.artnet.long_name,
         on_packet=tracker.record_dmx,
+        on_poll=tracker.record_poll,
     )
     transport = await start_artnet_listener(protocol, cfg.artnet.bind_ip, cfg.artnet.port)
 
