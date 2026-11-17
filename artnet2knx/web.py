@@ -14,7 +14,7 @@ from aiohttp import web
 
 from . import __version__
 from .artnet import format_universe
-from .config import Config
+from .config import Config, MappingType
 from .gateway import Gateway
 from .status import StatusTracker, format_value
 
@@ -72,10 +72,14 @@ def build_status(
         )
 
     mappings = []
-    for out in sorted(gateway.outputs, key=lambda o: (o.mapping.universe, o.mapping.channel)):
+    indexed = sorted(
+        enumerate(gateway.outputs), key=lambda io: (io[1].mapping.universe, io[1].mapping.channel)
+    )
+    for index, out in indexed:
         m = out.mapping
         mappings.append(
             {
+                "id": index,  # Index in gateway.outputs, für /api/send
                 "universe": format_universe(m.universe),
                 "channel": m.channel,
                 "type": m.type.value,
@@ -96,6 +100,7 @@ def build_status(
             "name": t.name,
             "type": t.type.value,
             "value": format_value(t.type, t.value),
+            "source": t.source,
         }
         for t in reversed(tracker.telegrams)
     ]
@@ -107,6 +112,7 @@ def build_status(
         "telegram_count": tracker.telegram_count,
         "knx": knx_status(cfg, xknx),
         "artnet": {"bind": f"{cfg.artnet.bind_ip}:{cfg.artnet.port}"},
+        "web": {"allow_send": cfg.web.allow_send},
         "universes": universes,
         "mappings": mappings,
         "telegrams": telegrams,
@@ -135,6 +141,17 @@ def _basic_auth_middleware(username: str, password: str):
     return middleware
 
 
+def parse_test_value(mtype: MappingType, value: Any) -> bool | int:
+    """Testwert aus JSON prüfen: switch -> true/false, dim -> 0..255."""
+    if mtype is MappingType.SWITCH:
+        if not isinstance(value, bool):
+            raise ValueError("Schalten erwartet true oder false")
+        return value
+    if isinstance(value, bool) or not isinstance(value, int) or not 0 <= value <= 255:
+        raise ValueError("Dimmen erwartet eine Zahl 0..255")
+    return value
+
+
 def create_app(
     cfg: Config,
     gateway: Gateway,
@@ -156,8 +173,39 @@ def create_app(
             headers={"Cache-Control": "no-store"},
         )
 
+    async def send(request: web.Request) -> web.Response:
+        if not cfg.web.allow_send:
+            return web.json_response({"error": "Senden ist deaktiviert (web.allow_send)"}, status=403)
+        # Nur JSON annehmen: fremde Webseiten können ohne CORS-Freigabe keine
+        # JSON-Requests schicken, das schützt vor Cross-Site-Requests.
+        if request.content_type != "application/json":
+            return web.json_response({"error": "Content-Type muss application/json sein"}, status=415)
+        try:
+            body = await request.json()
+            index = body["id"]
+            if isinstance(index, bool) or not isinstance(index, int):
+                raise ValueError("id muss eine Zahl sein")
+            if not 0 <= index < len(gateway.outputs):
+                raise ValueError(f"Unbekanntes Mapping {index}")
+            output = gateway.outputs[index]
+            value = parse_test_value(output.mapping.type, body["value"])
+        except (ValueError, KeyError, TypeError) as err:
+            return web.json_response({"error": f"Ungültige Anfrage: {err}"}, status=400)
+        try:
+            output.send_test(value)
+        except Exception as err:  # noqa: BLE001 - Fehler an die Seite melden statt 500
+            logger.exception("Testwert konnte nicht gesendet werden")
+            return web.json_response({"error": f"Senden fehlgeschlagen: {err}"}, status=502)
+        return web.json_response(
+            {
+                "group_address": output.mapping.group_address,
+                "value": format_value(output.mapping.type, value),
+            }
+        )
+
     app.router.add_get("/", index)
     app.router.add_get("/api/status", status)
+    app.router.add_post("/api/send", send)
     return app
 
 

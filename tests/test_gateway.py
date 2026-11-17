@@ -104,11 +104,11 @@ async def test_sender_error_does_not_break_gateway():
 
 async def test_on_sent_and_state():
     seen = []
-    gw = Gateway([mapping()], lambda ga, v: None, on_sent=lambda m, v: seen.append((m.group_address, v)))
+    gw = Gateway([mapping()], lambda ga, v: None, on_sent=lambda m, v, src: seen.append((m.group_address, v, src)))
     out = gw.outputs[0]
     assert out.dmx_value is None and out.last_sent is None
     gw.handle_dmx(dmx({1: 42}))
-    assert seen == [("1/1/1", 42)]
+    assert seen == [("1/1/1", 42, "dmx")]
     assert out.dmx_value == 42 and out.last_sent == 42 and out.sent_count == 1
     assert out.last_sent_at is not None
     gw.close()
@@ -153,4 +153,21 @@ async def test_short_packet_does_not_set_baseline():
     gw.handle_dmx(dmx({5: 100}))  # erster echter Wert -> Ausgangszustand
     gw.handle_dmx(dmx({5: 100}))
     assert sent == []
+    gw.close()
+
+
+async def test_send_test_does_not_touch_change_detection():
+    sent, seen = [], []
+    gw = Gateway(
+        [mapping(min_interval=10)],
+        lambda ga, v: sent.append(v),
+        on_sent=lambda m, v, src: seen.append(src),
+    )
+    out = gw.outputs[0]
+    gw.handle_dmx(dmx({1: 50}))
+    out.send_test(200)
+    assert sent == [50, 200] and seen == ["dmx", "test"]
+    assert out.last_sent == 50 and out.sent_count == 1 and not out.pending
+    gw.handle_dmx(dmx({1: 50}))  # unverändert -> nichts
+    assert sent == [50, 200]
     gw.close()

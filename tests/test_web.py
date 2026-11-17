@@ -18,7 +18,9 @@ def make(cfg: Config | None = None):
         ChannelMapping(1, 5, MappingType.DIM, "2/1/5", send_initial=True),
     ]
     tracker = StatusTracker({m.universe for m in mappings})
-    gateway = Gateway(mappings, lambda ga, v: None, on_sent=tracker.record_telegram)
+    sent = []
+    gateway = Gateway(mappings, lambda ga, v: sent.append((ga, v)), on_sent=tracker.record_telegram)
+    gateway.sent = sent  # für die Tests
     return cfg, gateway, tracker
 
 
@@ -82,4 +84,76 @@ async def test_basic_auth():
         assert (await client.get("/", headers={"Authorization": "Basic !!!"})).status == 401
         good = base64.b64encode(b"admin:geheim").decode()
         assert (await client.get("/api/status", headers={"Authorization": f"Basic {good}"})).status == 200
+    gateway.close()
+
+
+async def test_send_test_value():
+    cfg, gateway, tracker = make()
+    async with TestClient(TestServer(create_app(cfg, gateway, tracker))) as client:
+        status = await (await client.get("/api/status")).json()
+        assert status["web"]["allow_send"] is True
+        ids = {m["group_address"]: m["id"] for m in status["mappings"]}
+
+        resp = await client.post("/api/send", json={"id": ids["1/0/1"], "value": True})
+        assert resp.status == 200
+        assert await resp.json() == {"group_address": "1/0/1", "value": "EIN"}
+        resp = await client.post("/api/send", json={"id": ids["1/1/2"], "value": 128})
+        assert (await resp.json())["value"] == "128 (50 %)"
+        assert gateway.sent == [("1/0/1", True), ("1/1/2", 128)]
+
+        status = await (await client.get("/api/status")).json()
+        assert [t["source"] for t in status["telegrams"]] == ["test", "test"]
+        m = {x["group_address"]: x for x in status["mappings"]}
+        assert m["1/1/2"]["sent_count"] == 0  # Testwerte zählen nicht als DMX-Telegramm
+    gateway.close()
+
+
+@pytest.mark.parametrize(
+    "body,status",
+    [
+        ({"id": 0, "value": 1}, 400),  # Schalten erwartet true/false
+        ({"id": 1, "value": True}, 400),  # Dimmen erwartet Zahl
+        ({"id": 1, "value": 256}, 400),
+        ({"id": 99, "value": 1}, 400),
+        ({"id": "0", "value": True}, 400),
+        ({"value": True}, 400),
+    ],
+)
+async def test_send_invalid(body, status):
+    cfg, gateway, tracker = make()
+    async with TestClient(TestServer(create_app(cfg, gateway, tracker))) as client:
+        resp = await client.post("/api/send", json=body)
+        assert resp.status == status
+        assert "error" in await resp.json()
+        assert gateway.sent == []
+    gateway.close()
+
+
+async def test_send_requires_json_and_permission():
+    cfg, gateway, tracker = make()
+    async with TestClient(TestServer(create_app(cfg, gateway, tracker))) as client:
+        # Formular-POST (wie von einer fremden Webseite) wird abgelehnt
+        resp = await client.post("/api/send", data={"id": "0", "value": "true"})
+        assert resp.status == 415
+    cfg.web.allow_send = False
+    async with TestClient(TestServer(create_app(cfg, gateway, tracker))) as client:
+        resp = await client.post("/api/send", json={"id": 0, "value": True})
+        assert resp.status == 403
+    assert gateway.sent == []
+    gateway.close()
+
+
+async def test_send_error_reported():
+    cfg, gateway, tracker = make()
+
+    def broken(ga, v):
+        raise RuntimeError("Bus weg")
+
+    for out in gateway.outputs:
+        out._sender = broken
+    async with TestClient(TestServer(create_app(cfg, gateway, tracker))) as client:
+        resp = await client.post("/api/send", json={"id": 0, "value": True})
+        assert resp.status == 502
+        assert "Bus weg" in (await resp.json())["error"]
+    assert tracker.telegram_count == 0
     gateway.close()

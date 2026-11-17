@@ -61,6 +61,7 @@ web:
   port: 8080
   username: null                  # Basic-Auth, optional
   password: null
+  allow_send: true                # Testwerte von der Statusseite senden
 
 defaults:
   switch_threshold: 128
@@ -139,13 +140,21 @@ Gateway eine Statusseite, die sich jede Sekunde aktualisiert:
   Universum 1 statt 0 sendet.
 - **Kanäle:** aktueller DMX-Wert, zuletzt gesendeter KNX-Wert, Anzahl Telegramme,
   Hinweis „wartet“, solange ein gedrosselter Wert noch nicht gesendet ist. Mit Filter.
-- **Letzte Telegramme:** die letzten 100 gesendeten Telegramme mit Zeitstempel
+- **Letzte Telegramme:** die letzten 100 gesendeten Telegramme mit Zeitstempel,
+  Testtelegramme sind als „Test“ markiert
+- **Testwerte senden:** In der Kanal-Tabelle kann man jede Gruppenadresse aus
+  dem Mapping direkt ansteuern: Schalten mit EIN/AUS, Dimmen mit einem Wert in
+  Prozent. Praktisch für die Inbetriebnahme ohne Pult. Ein Testwert ändert
+  nichts an der DMX-Logik: Die nächste echte Änderung am Pult wird wie gewohnt
+  gesendet und überschreibt ihn. Beliebige Gruppenadressen außerhalb des
+  Mappings lassen sich nicht ansteuern.
 
 Die Rohdaten gibt es als JSON unter `/api/status`.
 
-Die Seite ist bewusst nur lesend, über sie lässt sich nichts schalten. Trotzdem
-gilt: Soll sie aus dem Netz erreichbar sein (`bind_ip: 0.0.0.0`), unbedingt
-`username` und `password` setzen. Basic-Auth überträgt das Passwort
+Weil die Seite Telegramme auf den Bus senden kann, gilt: Soll sie aus dem Netz
+erreichbar sein (`bind_ip: 0.0.0.0`), unbedingt `username` und `password`
+setzen (sonst warnt das Gateway beim Start im Log). Mit `allow_send: false`
+ist die Seite wieder nur lesend. Basic-Auth überträgt das Passwort
 unverschlüsselt, für Zugriff über fremde Netze also einen Reverse-Proxy mit
 HTTPS (z. B. nginx, Caddy) davorschalten. Mit `enabled: false` ist die Seite aus.
 

@@ -53,6 +53,7 @@ class WebConfig:
     port: int = 8080
     username: str | None = None
     password: str | None = None
+    allow_send: bool = True  # Testwerte von der Statusseite senden
 
 
 @dataclass
@@ -144,6 +145,8 @@ def load_config(path: str | Path) -> Config:
         raise ConfigError("web.port muss eine Zahl 1..65535 sein")
     if bool(cfg.web.username) != bool(cfg.web.password):
         raise ConfigError("web.username und web.password nur gemeinsam angeben")
+    if not isinstance(cfg.web.allow_send, bool):
+        raise ConfigError("web.allow_send muss true oder false sein")
 
     mapping_file = Path(data.get("mapping_file", cfg.mapping_file))
     if not mapping_file.is_absolute():

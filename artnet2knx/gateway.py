@@ -14,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 # Sender bekommt Gruppenadresse und Wert (bool für switch, int 0-255 für dim)
 Sender = Callable[[str, "bool | int"], None]
-# Wird nach jedem gesendeten Telegramm aufgerufen (z.B. für die Statusseite)
-SentCallback = Callable[[ChannelMapping, "bool | int"], None]
+# Wird nach jedem gesendeten Telegramm aufgerufen (z.B. für die Statusseite),
+# letzter Parameter ist die Quelle: "dmx" oder "test"
+SentCallback = Callable[[ChannelMapping, "bool | int", str], None]
 
 
 def dmx_to_knx(mapping: ChannelMapping, dmx_value: int) -> bool | int:
@@ -105,7 +106,19 @@ class ChannelOutput:
             logger.exception("Senden fehlgeschlagen: %s", self.mapping.label)
             return
         if self._on_sent is not None:
-            self._on_sent(self.mapping, value)
+            self._on_sent(self.mapping, value, "dmx")
+
+    def send_test(self, value: bool | int) -> None:
+        """Testwert direkt senden (Statusseite).
+
+        Ändert weder Drosselung noch Änderungserkennung: die nächste echte
+        DMX-Änderung wird wie gewohnt gesendet und überschreibt den Testwert.
+        Fehler beim Senden werden an den Aufrufer weitergegeben.
+        """
+        logger.info("Testwert: %s = %s", self.mapping.label, value)
+        self._sender(self.mapping.group_address, value)
+        if self._on_sent is not None:
+            self._on_sent(self.mapping, value, "test")
 
     def cancel(self) -> None:
         if self._timer is not None:

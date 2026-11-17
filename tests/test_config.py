@@ -63,6 +63,7 @@ def test_send_initial(tmp_path):
         ("web: {port: 0}\n", MAPPING, "web.port"),
         ("web: {username: admin}\n", MAPPING, "gemeinsam"),
         ("defaults: {send_initial_values: ja}\n", MAPPING, "send_initial_values"),
+        ("web: {allow_send: 1}\n", MAPPING, "allow_send"),
         ("", "universes: [{universe: 0, channels: [{channel: 1, type: dim, group_address: 1/1/1, send_initial: 1}]}]", "send_initial"),
     ],
 )
