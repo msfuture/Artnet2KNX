@@ -63,6 +63,11 @@
   .hidden { display: none; }
   #send-result { font-weight: 400; font-size: 13px; }
   .tag.test-src { color: var(--warn); border-color: var(--warn); }
+  .notice { display: none; margin-bottom: 16px; padding: 10px 14px; border-radius: 8px;
+            border: 1px solid var(--warn); color: var(--text); background: var(--card); }
+  .notice.show { display: block; }
+  .notice strong { color: var(--warn); }
+  .notice code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 </style>
 </head>
 <body>
@@ -78,6 +83,18 @@
     <div class="card"><div class="label">Telegramme gesendet</div><div class="value" id="tg-count">–</div><div class="sub" id="tg-sub"></div></div>
     <div class="card"><div class="label">Laufzeit</div><div class="value" id="uptime">–</div><div class="sub" id="version"></div></div>
   </div>
+
+  <div class="notice" id="bind-warning"><strong>Achtung:</strong> <code>artnet.bind_ip</code> ist
+    <code id="bind-ip"></code>. So stellt Linux keine Broadcasts zu: Das Gateway empfängt keine ArtPolls
+    (das Pult findet es nicht) und kein per Broadcast gesendetes DMX. Empfohlen ist <code>bind_ip: 0.0.0.0</code>.</div>
+
+  <section>
+    <h2>Pulte (ArtPoll) <small>Geräte, die per ArtPoll nach Nodes suchen</small></h2>
+    <div class="scroll"><table>
+      <thead><tr><th>Status</th><th>IP</th><th class="num">ArtPolls</th><th>Zuletzt</th><th>Hinweis</th></tr></thead>
+      <tbody id="controllers"></tbody>
+    </table></div>
+  </section>
 
   <section>
     <h2>Art-Net Universen <small>inkl. empfangener Universen ohne Mapping</small></h2>
@@ -181,6 +198,24 @@ function render(s) {
   if (k.queue) tgSub += ` · Warteschlange ${k.queue}`;
   if (k.errors) tgSub += ` · Fehler ${k.errors}`;
   $("tg-sub").textContent = tgSub;
+
+  // Pulte (ArtPoll)
+  $("bind-warning").classList.toggle("show", !s.artnet.bind_all);
+  $("bind-ip").textContent = s.artnet.bind.replace(/:\d+$/, "");
+  replace($("controllers"), s.controllers.map((c) => {
+    const live = c.last_seen_ago < 10;  // Pulte senden alle 2,5–3 s ein ArtPoll
+    const status = !live ? dot("muted", "Inaktiv")
+                 : c.replied ? dot("ok", "Beantwortet") : dot("warn", "Nicht beantwortet");
+    return row([
+      status,
+      el("span", { cls: "mono" }, c.ip),
+      el("td", { cls: "num" }, c.polls.toLocaleString("de-DE")),
+      ago(c.last_seen_ago),
+      c.note || el("span", { cls: "muted" }, "–"),
+    ]);
+  }), 5, s.artnet.poll_reply
+      ? "Noch kein ArtPoll empfangen. Das Pult sucht nicht nach Nodes, oder Broadcasts kommen nicht an (bind_ip, Firewall, IP-Netz)."
+      : "Antworten auf ArtPoll sind ausgeschaltet (artnet.poll_reply: false).");
 
   // Universen
   replace($("universes"), s.universes.map((u) => {

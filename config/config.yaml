@@ -28,6 +28,9 @@ knx:
   rate_limit: 20
 
 artnet:
+  # Unbedingt 0.0.0.0 lassen: Ist hier eine konkrete IP eingetragen, stellt
+  # Linux keine Broadcasts zu – das Pult findet das Gateway dann nicht (ArtPoll)
+  # und per Broadcast gesendetes DMX kommt nicht an.
   bind_ip: 0.0.0.0
   port: 6454
   # Auf ArtPoll antworten, damit Lichtpulte den Gateway als Node finden

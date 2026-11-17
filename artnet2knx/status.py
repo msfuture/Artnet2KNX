@@ -42,6 +42,17 @@ class UniverseStats:
         return 0.0 if now - self.last_seen > STALE_AFTER else self.rate
 
 
+@dataclass
+class PollStats:
+    """ArtPolls eines Pults (Controller)."""
+
+    ip: str
+    polls: int = 0
+    last_seen: float = 0.0  # time.monotonic()
+    replied: bool = False  # letzte ArtPoll beantwortet
+    note: str = ""
+
+
 @dataclass(frozen=True)
 class TelegramLogEntry:
     time: float  # time.time()
@@ -67,6 +78,7 @@ class StatusTracker:
         self.started_at = time.time()
         self._mapped = set(mapped_universes)
         self.universes: dict[int, UniverseStats] = {}
+        self.controllers: dict[str, PollStats] = {}
         self.telegrams: deque[TelegramLogEntry] = deque(maxlen=log_size)
         self.telegram_count = 0
 
@@ -75,6 +87,15 @@ class StatusTracker:
         if stats is None:
             stats = self.universes[universe] = UniverseStats(universe, universe in self._mapped)
         stats.record(source_ip, time.monotonic(), time.time())
+
+    def record_poll(self, source_ip: str, replied: bool, note: str = "") -> None:
+        stats = self.controllers.get(source_ip)
+        if stats is None:
+            stats = self.controllers[source_ip] = PollStats(source_ip)
+        stats.polls += 1
+        stats.last_seen = time.monotonic()
+        stats.replied = replied
+        stats.note = note
 
     def record_telegram(
         self, mapping: ChannelMapping, value: bool | int, source: str = "dmx"

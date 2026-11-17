@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import random
 import socket
 import struct
 from collections.abc import Callable, Iterable
@@ -20,6 +21,9 @@ OP_POLL_REPLY = 0x2100
 OP_DMX = 0x5000
 
 POLL_REPLY_LENGTH = 239
+# Art-Net 4: vor der ArtPollReply zufällig bis zu 1 s warten (verteilt die Antworten)
+POLL_REPLY_MAX_DELAY = 1.0
+POLL_FLAG_TARGETED = 0x20
 
 
 @dataclass(frozen=True)
@@ -71,11 +75,24 @@ def parse_packet(data: bytes) -> tuple[int, DmxPacket | None]:
     return opcode, DmxPacket(universe=(net << 8) | sub_uni, sequence=sequence, data=payload)
 
 
+def parse_poll_target(data: bytes) -> tuple[int, int] | None:
+    """Bereich (unten, oben) eines ArtPoll im Targeted Mode, sonst None.
+
+    Ältere/kürzere ArtPolls sind gültig, fehlende Felder gelten als 0.
+    """
+    padded = data[:18].ljust(18, b"\x00")
+    if not padded[12] & POLL_FLAG_TARGETED:
+        return None
+    top, bottom = struct.unpack_from(">HH", padded, 14)
+    return bottom, top
+
+
 def build_poll_replies(
     ip: str,
     universes: Iterable[int],
     short_name: str,
     long_name: str,
+    counter: int = 1,
 ) -> list[bytes]:
     """ArtPollReply Pakete bauen. Pro Paket max. 4 Ports mit gleichem Net/SubNet."""
     groups: dict[tuple[int, int], list[int]] = {}
@@ -100,10 +117,11 @@ def build_poll_replies(
         struct.pack_into(">H", pkt, 16, 1)  # Firmware-Version
         pkt[18] = net
         pkt[19] = sub
-        pkt[23] = 0xD0  # Status1: Indikatoren normal, Port-Address per Netzwerk/Config
+        pkt[23] = 0xD0  # Status1: Indikatoren normal, Port-Address fest (Konfigurationsdatei)
         pkt[26:44] = short_name.encode("ascii", "replace")[:17].ljust(18, b"\x00")
         pkt[44:108] = long_name.encode("ascii", "replace")[:63].ljust(64, b"\x00")
-        report = f"#0001 [{bind_index:04d}] OK".encode("ascii")
+        # NodeReport: Statuscode, Zähler der gesendeten Antworten (0-9999), Text
+        report = f"#0001 [{counter % 10000:04d}] OK".encode("ascii")
         pkt[108:172] = report.ljust(64, b"\x00")
         struct.pack_into(">H", pkt, 172, len(unis))
         for port, uni in enumerate(unis):
@@ -140,9 +158,14 @@ class ArtNetProtocol(asyncio.DatagramProtocol):
         short_name: str = "Artnet2KNX",
         long_name: str = "Art-Net to KNX Gateway",
         on_packet: Callable[[int, str], None] | None = None,
+        on_poll: Callable[[str, bool, str], None] | None = None,
+        reply_delay_max: float = POLL_REPLY_MAX_DELAY,
     ) -> None:
         self._on_dmx = on_dmx
         self._on_packet = on_packet  # (Universum, Absender-IP) für jedes ArtDmx
+        self._on_poll = on_poll  # (Absender-IP, beantwortet, Hinweis) für jedes ArtPoll
+        self._reply_delay_max = reply_delay_max
+        self._reply_counter = 0
         self._universes = set(universes)
         self._poll_reply = poll_reply
         self._announce_ip = announce_ip
@@ -168,16 +191,37 @@ class ArtNetProtocol(asyncio.DatagramProtocol):
                     format_universe(dmx.universe),
                     addr[0],
                 )
-        elif opcode == OP_POLL and self._poll_reply:
-            self._send_poll_reply(addr)
+        elif opcode == OP_POLL:
+            self._handle_poll(data, addr[0])
 
-    def _send_poll_reply(self, addr: tuple[str, int]) -> None:
-        if self._transport is None:
+    def _handle_poll(self, data: bytes, source_ip: str) -> None:
+        reply, note = True, ""
+        target = parse_poll_target(data)
+        if not self._poll_reply:
+            reply, note = False, "poll_reply ist aus"
+        elif target is not None:
+            bottom, top = target
+            note = f"Targeted Mode {bottom}-{top}"
+            if not any(bottom <= u <= top for u in self._universes):
+                reply, note = False, f"{note}: kein eigenes Universum im Bereich"
+        if self._on_poll is not None:
+            self._on_poll(source_ip, reply, note)
+        if not reply:
+            logger.debug("ArtPoll von %s nicht beantwortet (%s)", source_ip, note)
             return
-        ip = self._announce_ip or local_ip_for(addr[0])
-        for reply in build_poll_replies(ip, self._universes, self._short_name, self._long_name):
-            self._transport.sendto(reply, (addr[0], ARTNET_PORT))
-        logger.debug("ArtPollReply an %s gesendet", addr[0])
+        delay = random.uniform(0, self._reply_delay_max)
+        asyncio.get_running_loop().call_later(delay, self._send_poll_reply, source_ip)
+
+    def _send_poll_reply(self, source_ip: str) -> None:
+        if self._transport is None or self._transport.is_closing():
+            return
+        self._reply_counter += 1
+        ip = self._announce_ip or local_ip_for(source_ip)
+        for reply in build_poll_replies(
+            ip, self._universes, self._short_name, self._long_name, self._reply_counter
+        ):
+            self._transport.sendto(reply, (source_ip, ARTNET_PORT))
+        logger.debug("ArtPollReply an %s gesendet", source_ip)
 
     def error_received(self, exc: Exception) -> None:
         logger.warning("Art-Net Socket-Fehler: %s", exc)
@@ -186,6 +230,13 @@ class ArtNetProtocol(asyncio.DatagramProtocol):
 async def start_artnet_listener(
     protocol: ArtNetProtocol, bind_ip: str = "0.0.0.0", port: int = ARTNET_PORT
 ) -> asyncio.DatagramTransport:
+    if bind_ip not in ("0.0.0.0", ""):
+        logger.warning(
+            "artnet.bind_ip ist %s: Linux stellt so keine Broadcasts zu, das Gateway "
+            "empfängt dann weder ArtPoll (Pult findet es nicht) noch Broadcast-DMX. "
+            "Empfohlen: bind_ip: 0.0.0.0",
+            bind_ip,
+        )
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
