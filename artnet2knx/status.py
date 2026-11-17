@@ -49,6 +49,7 @@ class TelegramLogEntry:
     name: str
     type: MappingType
     value: bool | int
+    source: str = "dmx"  # "dmx" oder "test"
 
 
 def format_value(mtype: MappingType, value: bool | int | None) -> str:
@@ -75,8 +76,12 @@ class StatusTracker:
             stats = self.universes[universe] = UniverseStats(universe, universe in self._mapped)
         stats.record(source_ip, time.monotonic(), time.time())
 
-    def record_telegram(self, mapping: ChannelMapping, value: bool | int) -> None:
+    def record_telegram(
+        self, mapping: ChannelMapping, value: bool | int, source: str = "dmx"
+    ) -> None:
         self.telegram_count += 1
         self.telegrams.append(
-            TelegramLogEntry(time.time(), mapping.group_address, mapping.name, mapping.type, value)
+            TelegramLogEntry(
+                time.time(), mapping.group_address, mapping.name, mapping.type, value, source
+            )
         )

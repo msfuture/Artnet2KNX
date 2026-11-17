@@ -53,6 +53,16 @@
   #offline.show { display: block; }
   input[type=search] { font: inherit; padding: 3px 8px; border: 1px solid var(--border); border-radius: 6px;
                        background: var(--bg); color: var(--text); min-width: 0; width: 200px; }
+  .test { display: inline-flex; gap: 4px; align-items: center; }
+  .test button { font: inherit; font-size: 12px; padding: 2px 9px; border-radius: 5px; cursor: pointer;
+                 border: 1px solid var(--border); background: var(--bg); color: var(--text); }
+  .test button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  .test button:disabled { opacity: .5; cursor: progress; }
+  .test input { font: inherit; font-size: 12px; width: 52px; padding: 2px 4px; text-align: right;
+                border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); }
+  .hidden { display: none; }
+  #send-result { font-weight: 400; font-size: 13px; }
+  .tag.test-src { color: var(--warn); border-color: var(--warn); }
 </style>
 </head>
 <body>
@@ -78,9 +88,9 @@
   </section>
 
   <section>
-    <h2>Kanäle <input type="search" id="filter" placeholder="Filter…" title="Nach Name, Gruppenadresse, Kanal oder Typ filtern"></h2>
+    <h2><span>Kanäle <span id="send-result" aria-live="polite"></span></span> <input type="search" id="filter" placeholder="Filter…" title="Nach Name, Gruppenadresse, Kanal oder Typ filtern"></h2>
     <div class="scroll tall"><table>
-      <thead><tr><th>Universum</th><th class="num">Kanal</th><th>Name</th><th>Typ</th><th>Gruppenadresse</th><th>DMX</th><th>KNX (gesendet)</th><th class="num">Telegramme</th><th>Zuletzt gesendet</th></tr></thead>
+      <thead><tr><th>Universum</th><th class="num">Kanal</th><th>Name</th><th>Typ</th><th>Gruppenadresse</th><th>DMX</th><th>KNX (gesendet)</th><th class="num">Telegramme</th><th>Zuletzt gesendet</th><th id="test-col" class="hidden" title="Testwert direkt auf die Gruppenadresse senden">Testwert senden</th></tr></thead>
       <tbody id="mappings"></tbody>
     </table></div>
   </section>
@@ -88,7 +98,7 @@
   <section>
     <h2>Letzte Telegramme <small id="tg-log-note"></small></h2>
     <div class="scroll tall"><table>
-      <thead><tr><th>Zeit</th><th>Gruppenadresse</th><th>Name</th><th>Typ</th><th>Wert</th></tr></thead>
+      <thead><tr><th>Zeit</th><th>Gruppenadresse</th><th>Name</th><th>Typ</th><th>Wert</th><th>Quelle</th></tr></thead>
       <tbody id="telegrams"></tbody>
     </table></div>
   </section>
@@ -98,6 +108,7 @@
 const $ = (id) => document.getElementById(id);
 let filterText = "";
 let last = null;
+const testControls = new Map();  // Mapping-ID -> Bedienelement (bleibt erhalten, damit Eingaben nicht verloren gehen)
 
 function el(tag, opts = {}, ...children) {
   const e = document.createElement(tag);
@@ -191,7 +202,11 @@ function render(s) {
   const f = filterText.toLowerCase();
   const maps = s.mappings.filter((m) => !f ||
     [m.name, m.group_address, String(m.channel), m.universe, m.type].some((v) => v.toLowerCase().includes(f)));
-  replace($("mappings"), maps.map((m) => {
+  const allowSend = s.web.allow_send;
+  $("test-col").classList.toggle("hidden", !allowSend);
+  // Während im Testwert-Feld getippt wird, die Tabelle nicht neu aufbauen
+  const editing = document.activeElement?.tagName === "INPUT" && $("mappings").contains(document.activeElement);
+  if (!editing) replace($("mappings"), maps.map((m) => {
     const bar = el("span", { cls: "bar", title: m.dmx == null ? "" : `${Math.round(m.dmx * 100 / 255)} %` }, el("span"));
     if (m.dmx != null) bar.firstChild.style.width = `${m.dmx / 2.55}%`;
     const knx = el("span", { cls: m.knx === "EIN" ? "ok" : "" }, m.knx);
@@ -206,8 +221,9 @@ function render(s) {
       knx,
       el("td", { cls: "num" }, m.sent_count.toLocaleString("de-DE")),
       m.last_sent_at ? ago(now - m.last_sent_at) : "–",
+      ...(allowSend ? [testControl(m)] : []),
     ]);
-  }), 9, f ? "Kein Kanal passt zum Filter." : "Keine Kanäle konfiguriert.");
+  }), allowSend ? 10 : 9, f ? "Kein Kanal passt zum Filter." : "Keine Kanäle konfiguriert.");
 
   // Telegramm-Log
   $("tg-log-note").textContent = `neueste zuerst, max. ${s.telegrams.length}`;
@@ -217,7 +233,69 @@ function render(s) {
     t.name || el("span", { cls: "muted" }, "–"),
     el("span", { cls: "tag" }, t.type === "switch" ? "Schalten" : "Dimmen"),
     el("span", { cls: t.value === "EIN" ? "ok" : "" }, t.value),
-  ])), 5, "Noch keine Telegramme gesendet.");
+    t.source === "test" ? el("span", { cls: "tag test-src", title: "Von der Statusseite gesendet" }, "Test")
+                        : el("span", { cls: "muted" }, "DMX"),
+  ])), 6, "Noch keine Telegramme gesendet.");
+}
+
+function testControl(m) {
+  let box = testControls.get(m.id);
+  if (box) return box;
+  box = el("span", { cls: "test" });
+  if (m.type === "switch") {
+    for (const [label, value] of [["EIN", true], ["AUS", false]]) {
+      const b = el("button", { title: `${m.group_address} ${label} schalten` }, label);
+      b.type = "button";
+      b.addEventListener("click", () => sendTest(m, value, box));
+      box.append(b);
+    }
+  } else {
+    const input = el("input", { title: "Helligkeit in Prozent (0–100)" });
+    Object.assign(input, { type: "number", min: 0, max: 100, step: 1, value: 50 });
+    const b = el("button", { title: `Wert auf ${m.group_address} senden` }, "Senden");
+    b.type = "button";
+    const go = () => {
+      const pct = Number(input.value);
+      if (input.value === "" || !Number.isFinite(pct) || pct < 0 || pct > 100) {
+        showResult(false, "Bitte einen Wert von 0 bis 100 % eingeben.");
+        return;
+      }
+      sendTest(m, Math.round(pct * 2.55), box);
+    };
+    b.addEventListener("click", go);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") go(); });
+    box.append(input, " %", b);
+  }
+  testControls.set(m.id, box);
+  return box;
+}
+
+let resultTimer = null;
+function showResult(ok, text) {
+  const r = $("send-result");
+  r.className = ok ? "ok" : "err";
+  r.textContent = (ok ? "✓ " : "✗ ") + text;
+  clearTimeout(resultTimer);
+  resultTimer = setTimeout(() => { r.textContent = ""; }, ok ? 5000 : 10000);
+}
+
+async function sendTest(m, value, box) {
+  const buttons = box.querySelectorAll("button");
+  buttons.forEach((b) => { b.disabled = true; });
+  try {
+    const res = await fetch("api/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: m.id, value }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    showResult(true, `${data.group_address} ← ${data.value}${m.name ? ` (${m.name})` : ""}`);
+  } catch (e) {
+    showResult(false, `${m.group_address}: ${e.message}`);
+  } finally {
+    buttons.forEach((b) => { b.disabled = false; });
+  }
 }
 
 async function refresh() {

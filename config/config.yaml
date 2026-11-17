@@ -46,6 +46,9 @@ web:
   port: 8080
   username: null
   password: null
+  # Testwerte von der Statusseite auf die Gruppenadressen aus dem Mapping
+  # senden (Schalten EIN/AUS, Dimmen 0-100 %). false = Seite nur lesend.
+  allow_send: true
 
 # Standardwerte für das Mapping (können pro Kanal überschrieben werden)
 defaults:

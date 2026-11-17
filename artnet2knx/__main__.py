@@ -69,6 +69,13 @@ async def run(cfg: Config, dry_run: bool) -> None:
 
     web_runner = None
     if cfg.web.enabled:
+        local = cfg.web.bind_ip in ("127.0.0.1", "::1", "localhost")
+        if cfg.web.allow_send and not local and not cfg.web.username:
+            logger.warning(
+                "Statusseite ist auf %s ohne Passwort erreichbar und darf Testwerte "
+                "auf den KNX-Bus senden. web.username/web.password setzen!",
+                cfg.web.bind_ip,
+            )
         web_runner = await start_web(
             create_app(cfg, gateway, tracker, xknx), cfg.web.bind_ip, cfg.web.port
         )
