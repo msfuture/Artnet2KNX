@@ -32,6 +32,21 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--check", action="store_true", help="Konfiguration prüfen, Mapping ausgeben und beenden"
     )
+    parser.add_argument(
+        "-m",
+        "--monitor",
+        action="store_true",
+        help="Busmonitor: KNX-Telegramme per Multicast mitlesen und anzeigen",
+    )
+    parser.add_argument(
+        "--local-ip", help="Busmonitor: Netzwerkkarte (IP), überschreibt knx.local_ip"
+    )
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="Busmonitor: Farbausgabe (Standard: auto)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Debug-Logging")
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return parser.parse_args(argv)
@@ -97,8 +112,40 @@ async def run(cfg: Config, dry_run: bool) -> None:
             await xknx.stop()
 
 
+def monitor(args: argparse.Namespace) -> int:
+    from pathlib import Path
+
+    from .monitor import names_from_mappings, run_monitor
+
+    if Path(args.config).exists():
+        try:
+            cfg = load_config(args.config)
+        except ConfigError as err:
+            print(f"Konfigurationsfehler: {err}", file=sys.stderr)
+            return 2
+    else:
+        print(f"{args.config} nicht gefunden, verwende Standardwerte", file=sys.stderr)
+        cfg = Config()
+    if cfg.knx.connection_type != "routing":
+        print(
+            f"Hinweis: knx.connection_type ist {cfg.knx.connection_type}, der Busmonitor "
+            "liest trotzdem per Multicast (IP Routing) mit.",
+            file=sys.stderr,
+        )
+    color = {"auto": None, "always": True, "never": False}[args.color]
+    return run_monitor(
+        cfg.knx.multicast_group,
+        cfg.knx.multicast_port,
+        local_ip=args.local_ip or cfg.knx.local_ip,
+        names=names_from_mappings(cfg.mappings),
+        color=color,
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.monitor:
+        return monitor(args)
     try:
         cfg = load_config(args.config)
     except ConfigError as err:
