@@ -161,6 +161,43 @@ ist die Seite wieder nur lesend. Basic-Auth überträgt das Passwort
 unverschlüsselt, für Zugriff über fremde Netze also einen Reverse-Proxy mit
 HTTPS (z. B. nginx, Caddy) davorschalten. Mit `enabled: false` ist die Seite aus.
 
+## Busmonitor
+
+Zum Mitlesen des KNX-Busses auf der Konsole:
+
+```bash
+venv/bin/artnet2knx -c config/config.yaml --monitor
+```
+
+Der Monitor tritt der Multicast-Gruppe aus `knx.multicast_group`/`multicast_port`
+bei (Standard `224.0.23.12:3671`) und gibt jedes Routing-Telegramm als eine
+Zeile aus:
+
+```
+Zeit         │ Ziel       │ Absender   │ DPT/Länge │ Typ                │ Wert             │ Hops
+21:59:06.167 │ 1/0/1      │ 1.1.5      │ DPT 1.001 │ Write              │ EIN              │  6    Wohnzimmer Decke
+21:59:06.217 │ 1/1/2      │ 1.1.5      │ DPT 5.001 │ Write              │ 50 % (128)       │  6    Esstisch Helligkeit
+21:59:06.267 │ 1/1/2      │ 1.1.5      │ DPT 5.001 │ Read               │                  │  6    Esstisch Helligkeit
+21:59:06.317 │ 2/2/3      │ 1.1.5      │ 2 Byte    │ Response           │ 0C 1A            │  5
+21:59:06.368 │ 1/0/1      │ 1.1.5      │ DPT 1.001 │ Write (Wdh.)       │ AUS              │  6    Wohnzimmer Decke
+21:59:06.418 │ 1.1.1      │ 1.1.5      │           │ T_Connect          │                  │  6
+```
+
+- Gruppenadressen aus der `mapping.yaml` werden mit DPT und Namen angezeigt
+  und dekodiert (EIN/AUS, Prozent). Bei allen anderen stehen die
+  Nutzdatenlänge und der Rohwert da, denn den DPT kennt nur die ETS.
+- Farben: Write grün, Read gelb, Response cyan, Telegramme an physikalische
+  Adressen (Programmierung) magenta, Hops 0 rot. `(Wdh.)` markiert
+  Wiederholungen. `ROUTING_BUSY` und `ROUTING_LOST_MESSAGE` werden ebenfalls angezeigt.
+- `--color always|never` erzwingt bzw. unterdrückt Farben (Standard: nur im
+  Terminal, `NO_COLOR` wird beachtet). `--local-ip` wählt die Netzwerkkarte.
+- Der Monitor läuft parallel zum Gateway-Dienst und sieht dessen Telegramme mit.
+  Er braucht nur lesenden Multicast-Empfang und sendet nichts. Bei
+  `connection_type: tunneling` funktioniert er nur, wenn im Netz trotzdem
+  ein KNX IP Router per Multicast sendet. IP-Secure-Telegramme sind
+  verschlüsselt und erscheinen nur als Hinweis.
+- Fehlt die `config.yaml`, nimmt der Monitor die Standardwerte.
+
 ## Pult findet das Gateway nicht
 
 Das Gateway antwortet auf ArtPoll nach Art-Net 4: per Unicast an das Pult,
@@ -193,6 +230,7 @@ artnet2knx/
   config.py    Laden und Prüfen der YAML-Dateien
   gateway.py   DMX -> KNX Umrechnung, Änderungserkennung, Drosselung
   knx.py       KNX-Verbindung und Telegramme (xknx)
+  monitor.py   Busmonitor für die Konsole (--monitor)
   status.py    Laufzeit-Statistiken (Pakete/s, Telegramm-Log)
   web.py       Statusseite und JSON-API (aiohttp)
   static/      HTML der Statusseite
